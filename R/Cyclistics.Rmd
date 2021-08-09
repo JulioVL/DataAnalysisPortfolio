@@ -1,0 +1,492 @@
+---
+title: "Cyclistics-BusinessCase"
+author: "Julio Venero"
+date: "6/9/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Cyclistic Exercise Full Year Analysis
+
+This analysis is for case study 1 from the Google Data Analytics Certificate (Cyclistic).
+
+It’s originally based on the case study "'Sophisticated, Clear, and Polished’: Divvy and Data Visualization" written by Kevin Hartman [found here](https://artscience.blog/home/divvy-dataviz-case-study). 
+
+We will be using the Divvy dataset for the case study. The purpose of this script is to consolidate downloaded Divvy data into a single dataframe and then conduct simple analysis to help answer the key question: *“In what ways do members and casual riders use Divvy bikes differently?”*
+
+#### Packages used for the cleaning, analysis and visualization
+
+* tidyverse for data import and wrangling
+* lubridate for date functions
+* ggplot for visualization
+* janitor for data cleaning
+* hms for time variables handling
+
+```{r load libraries, include=FALSE}
+library(tidyverse)  #helps wrangle data
+library(lubridate)  #helps wrangle date attributes
+library(ggplot2)  #helps visualize data
+library(janitor)
+library(hms)
+```
+
+### STEP 1: COLLECT DATA
+
+Upload Divvy data sets (csv files) into the separate data frames
+Last 12 months, from 05/2020 to 04/2021
+
+```{r upload data sets, echo=TRUE, message=FALSE, warning=FALSE, results='hide'}
+# Loop through csv files in directory and load to corresponding data frames
+for (data in list.files(pattern="*.csv")) {
+   name <- paste("tripdata", str_sub(data, 1, 6), sep = "_")
+   assign(name, read_csv(data))
+}
+# Remove temporary variables created in the loop
+rm(data)
+rm(name)
+```
+
+### STEP 2: WRANGLE DATA AND COMBINE INTO A SINGLE FILE
+
+Check consistency of columns among data frames
+
+```{r variables check, echo=TRUE, message=FALSE}
+# Janitor package has useful functions to compare columns in different data frames
+
+# Returns mismatch columns
+compare_df_cols(
+    tripdata_202005,
+    tripdata_202006,
+    tripdata_202007,
+    tripdata_202008,
+    tripdata_202009,
+    tripdata_202010,
+    tripdata_202011,
+    tripdata_202012,
+    tripdata_202101,
+    tripdata_202102,
+    tripdata_202103,
+    tripdata_202104,
+    return = "mismatch"
+)
+```
+
+The columns are the same but "end_station_id" and "start_station_id" have different data types: numeric and character.
+We need all of them to be numeric
+
+```{r convert data type, echo=TRUE, message=FALSE, warning=FALSE, results='hide'}
+# Convert to numeric
+tripdata_202012 <- tripdata_202012 %>%
+  mutate(start_station_id = as.numeric(start_station_id),
+         end_station_id = as.numeric(end_station_id))
+
+tripdata_202101 <- tripdata_202101 %>%
+  mutate(start_station_id = as.numeric(start_station_id),
+         end_station_id = as.numeric(end_station_id))
+
+tripdata_202102 <- tripdata_202102 %>%
+  mutate(start_station_id = as.numeric(start_station_id),
+         end_station_id = as.numeric(end_station_id))
+
+tripdata_202103 <- tripdata_202103 %>%
+  mutate(start_station_id = as.numeric(start_station_id),
+         end_station_id = as.numeric(end_station_id))
+
+tripdata_202104 <- tripdata_202104 %>%
+  mutate(start_station_id = as.numeric(start_station_id),
+         end_station_id = as.numeric(end_station_id))
+
+```
+
+Now, there should be no mismatch columns
+
+```{r}
+compare_df_cols(
+    tripdata_202005,
+    tripdata_202006,
+    tripdata_202007,
+    tripdata_202008,
+    tripdata_202009,
+    tripdata_202010,
+    tripdata_202011,
+    tripdata_202012,
+    tripdata_202101,
+    tripdata_202102,
+    tripdata_202103,
+    tripdata_202104,
+    return = "mismatch"
+)
+```
+
+Bind all data frames into a single one
+
+```{r bind dataframes}
+# Binding
+tripdata <- bind_rows(
+  tripdata_202005,
+  tripdata_202006,
+  tripdata_202007,
+  tripdata_202008,
+  tripdata_202009,
+  tripdata_202010,
+  tripdata_202011,
+  tripdata_202012,
+  tripdata_202101,
+  tripdata_202102,
+  tripdata_202103,
+  tripdata_202104
+)
+
+# Remove the partial datasets
+rm(tripdata_202005)
+rm(tripdata_202006)
+rm(tripdata_202007)
+rm(tripdata_202008)
+rm(tripdata_202009)
+rm(tripdata_202010)
+rm(tripdata_202011)
+rm(tripdata_202012)
+rm(tripdata_202101)
+rm(tripdata_202102)
+rm(tripdata_202103)
+rm(tripdata_202104)
+
+```
+
+Create a column called "ride_length" equal to Started_at - Ended_at and a column called "day_of_week" to get the date that each ride started
+
+```{r enrich data}
+tripdata <- tripdata %>%
+  mutate(ride_length = as_hms(difftime(ended_at, started_at)),
+         day_of_week = wday(started_at, week_start = 1))
+```
+
+
+### STEP 3: CLEAN UP AND ADD DATA TO PREPARE FOR ANALYSIS
+
+Inspect the new table that has been created
+
+```{r data overview}
+colnames(tripdata)  #List of column names
+nrow(tripdata)  #How many rows are in data frame?
+dim(tripdata)  #Dimensions of the data frame?
+head(tripdata)  #See the first 6 rows of data frame.
+str(tripdata)  #See list of columns and data types
+summary(tripdata)  #Statistical summary of data.
+```
+
+#### 1. Inspect the values of each variable to identify duplicates, inconsistencies or errors
+
+```{r variables inspect}
+# Values consistency
+unique(tripdata['rideable_type'])
+unique(tripdata['start_station_name'])
+unique(tripdata['end_station_name'])
+unique(tripdata['member_casual'])
+
+# Look for duplicated ride ids
+duplicatedRideId <- tripdata[duplicated(tripdata$ride_id), "ride_id"]
+nrow(duplicatedRideId) #209
+
+duplicatedRides <- arrange(subset(tripdata, ride_id %in% duplicatedRideId$ride_id), ride_id)
+
+
+```
+
+Duplicated Ride IDs were found
+
+Duplicated rides had a start date after the end date (negative ride length).
+
+These rows will be deleted
+
+```{r delete duplicates}
+#Backup dataframe
+tripdata_bk <- tripdata
+
+#Remove duplicates
+tripdata <- tripdata %>%
+  filter(!(ride_id %in% duplicatedRideId$ride_id & ride_length < 0))
+
+```
+
+Check if there are more negative ride lengths and *remove them*
+
+```{r remove negative ride length}
+tripdata <- tripdata %>%
+  filter(ride_length >= 0)
+```
+
+#### 2. Enrich the data frame
+
+Define the correct data types for each variable
+
+```{r redefine data types}
+tripdata$rideable_type = as.factor(tripdata$rideable_type)
+tripdata$member_casual = as.factor(tripdata$member_casual)
+```
+
+Add year, month, day columns to facilitate the analysis
+
+```{r enrich with date columns}
+tripdata$date <- as.Date(tripdata$started_at)
+tripdata$day <- day(tripdata$date)
+tripdata$month <- month(tripdata$date, label = TRUE)
+tripdata$year <- year(tripdata$date)
+```
+
+#### 3. Remove rows based on business rules or with missing values (impute if possible)
+
+The dataframe includes a few hundred entries when bikes were taken out of docks and checked for quality by Divvy. Remove them.
+
+```{r remove quality check bikes}
+tripdata <- tripdata[!tripdata$start_station_name == "HQ QR", ]
+```
+
+Check for missing data
+
+```{r missing data}
+sum(is.na(tripdata$ride_id)) #148183
+tripdata <- tripdata[!is.na(tripdata$ride_id), ]
+sum(is.na(tripdata$ride_id)) #0
+
+sum(is.na(tripdata$start_station_id)) #439815
+sum(is.na(tripdata$end_station_id)) #504254
+
+```
+
+Fill the missing station's id with values from other rows
+```{r fill missing values}
+# Create master table of start stations
+station_name_mt <- tripdata %>%
+  filter(!is.na(start_station_id)) %>%
+  distinct(start_station_id, start_station_name) %>%
+  arrange(start_station_id)
+# Fill missing Start Station IDs
+tripdata <- tripdata %>%
+  left_join(station_name_mt, by="start_station_name", suffix = c("_td", "_mt")) %>%
+  mutate(start_station_id_td = if_else(is.na(start_station_id_td), start_station_id_mt, start_station_id_td)) %>%
+  select(-start_station_id_mt) %>%
+  rename(start_station_id = start_station_id_td)
+
+# Create master table of end stations
+station_name_mt <- tripdata %>%
+  filter(!is.na(end_station_id)) %>%
+  distinct(end_station_id, end_station_name) %>%
+  arrange(end_station_id)
+# Fill missing End Station IDs
+tripdata <- tripdata %>%
+  left_join(station_name_mt, by="end_station_name", suffix = c("_td", "_mt")) %>%
+  mutate(end_station_id_td = if_else(is.na(end_station_id_td), end_station_id_mt, end_station_id_td)) %>%
+  select(-end_station_id_mt) %>%
+  rename(end_station_id = end_station_id_td)
+
+# Validate
+colnames(tripdata)
+sum(is.na(tripdata$start_station_id)) #117
+sum(is.na(tripdata$end_station_id) & !is.na(tripdata$end_station_name)) #217
+
+# Remove rows where start_station_id is still missing since the number of NAs is low
+tripdata <- subset(tripdata, !is.na(start_station_id))
+```
+
+### STEP 4: CONDUCT DESCRIPTIVE ANALYSIS
+
+#### 1. Descriptive statistics
+
+```{r descriptive analysis}
+summary(tripdata)
+
+aggregate(tripdata$ride_length ~ tripdata$member_casual, FUN = mean)
+aggregate(tripdata$ride_length ~ tripdata$member_casual, FUN = median)
+aggregate(tripdata$ride_length ~ tripdata$member_casual, FUN = max)
+aggregate(tripdata$ride_length ~ tripdata$member_casual, FUN = min)
+
+```
+
+Compare members and casual users ride length statistics
+
+```{r members vs casual, warning=FALSE}
+# Members and casual users statistics
+tripdata %>%
+  group_by(member_casual) %>%
+  summarise(ride_length_avg = as_hms(mean(ride_length)),
+            ride_length_med = as_hms(median(ride_length)),
+            ride_length_max = as_hms(max(ride_length)),
+            ride_length_min = as_hms(min(ride_length))
+          )
+
+```
+
+Add a new column to have the name of the weekdays and analyze ride_length by it
+
+```{r member vs casual by weekday, warning=FALSE}
+# Add weekday column
+tripdata <- tripdata %>%
+  mutate(weekday = as.factor(weekdays(started_at)))
+
+# Order weekday levels: from monday to sunday
+tripdata$weekday <- factor(tripdata$weekday,
+                           levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                                      "Saturday", "Sunday"))
+
+# Members and casual users statistics by weekday
+tripdata %>%
+  group_by(member_casual, weekday) %>%
+  summarise(
+            number_of_rides = n(),
+            average_duration = as_hms(mean(ride_length)),
+            median_duration = as_hms(median(ride_length)),
+            max_duration = as_hms(max(ride_length)),
+            min_duration = as_hms(min(ride_length))
+          )
+
+```
+
+#### 2. Analyze through visualizations 
+
+*Analysis by weekday*
+
+Let's visualize the number of rides by rider type
+
+```{r rides per weekday viz, message=FALSE, warning=FALSE}
+tripdata %>% 
+  group_by(member_casual, weekday) %>%
+  summarise(number_of_rides = n()) %>%
+  ggplot(aes(x = weekday, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  theme(axis.title.x = element_blank()) +
+  ylab("Number of rides") +
+  scale_y_continuous(labels = scales::comma) +
+  labs(fill = "Customer Type",
+       title = "Rides per weekday",
+       subtitle = "Members' number of rides is higher, except for the weekends") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+```
+
+Now, check the average duration
+
+```{r avg duration per weekday viz, message=FALSE, warning=FALSE}
+tripdata %>%
+  group_by(member_casual, weekday) %>%
+  summarise(average_duration = as_hms(mean(ride_length))) %>%
+  ggplot(aes(x = weekday, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  theme(axis.title.x = element_blank()) +
+  ylab("Average Duration") +
+  labs(fill = "Customer Type",
+       title = "Customer's Average ride duration per weekday",
+       subtitle = "Duration remains similar throughout the week.\nCasual riders duration is double that of members") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+
+```
+
+Start time per weekday
+
+```{r, message=FALSE, warning=FALSE}
+# Create the function to calculate the mode.
+# Source: https://www.tutorialspoint.com/r/r_mean_median_mode.htm
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+tripdata %>%
+  group_by(member_casual, weekday) %>%
+  summarise(started_at_hour = hour(getmode(started_at))) %>%
+  ggplot(aes(x = weekday, y = started_at_hour, color = member_casual, group = member_casual)) +
+  geom_line() +
+  geom_point() +
+  theme(axis.title.x = element_blank()) +
+  ylab("Ride Start Hour") +
+  labs(fill = "Customer Type",
+       title = "Most frequent hour to start a ride",
+       subtitle = "Similar behavior except for monday") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+
+```
+
+*Analysis by month*
+
+Let's visualize the number of rides by rider type
+
+```{r rides per month viz, message=FALSE, warning=FALSE}
+tripdata %>% 
+  group_by(member_casual, month) %>%
+  summarise(number_of_rides = n()) %>%
+  ggplot(aes(x = month, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  theme(axis.title.x = element_blank()) +
+  ylab("Number of rides") +
+  scale_y_continuous(labels = scales::comma) +
+  labs(fill = "Customer Type",
+       title = "Rides per month",
+       subtitle = "Similar number of rides around mid-year\nThe difference is higher at the beginning and end of the year") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+```
+
+Now, check the average duration
+
+```{r avg duration per month viz, message=FALSE, warning=FALSE}
+tripdata %>%
+  group_by(member_casual, month) %>%
+  summarise(average_duration = as_hms(mean(ride_length))) %>%
+  ggplot(aes(x = month, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  theme(axis.title.x = element_blank()) +
+  ylab("Average Duration") +
+  labs(fill = "Customer Type",
+       title = "Customer's Average ride duration per month",
+       subtitle = "Casual riders duration is double that of members") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+
+```
+
+*Is there any difference regarding the type rideable type?*
+
+```{r rideable type diff, message=FALSE, warning=FALSE}
+tripdata %>%
+  group_by(member_casual, rideable_type) %>%
+  summarise(number_of_rides = n()) %>%
+  ggplot(aes(x=rideable_type, y=number_of_rides)) +
+  geom_col(aes(fill=member_casual), position = "dodge") +
+  coord_flip() +
+  theme(axis.title.y = element_blank()) +
+  ylab("Rides") +
+  scale_y_continuous(labels = scales::comma) +
+  labs(fill = "Customer Type",
+       title = "Customer rides by rideable type",
+       subtitle = "No signicant differences between customers") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+
+```
+
+
+### STEP 5: EXPORT SUMMARY FILE FOR FURTHER ANALYSIS
+
+Create a csv file that we will visualize in Excel, Tableau, or my presentation software
+
+```{r export to csv}
+counts <- aggregate(tripdata$ride_length ~ tripdata$member_casual + tripdata$weekday, FUN = mean)
+write.csv(counts, 'avg_ride_length.csv')
+```

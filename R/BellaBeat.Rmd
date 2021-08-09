@@ -1,0 +1,653 @@
+---
+title: "Bellabeat App - Case Study"
+author: "Julio Venero"
+date: "6/15/2021"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+title: "Smart Device Usage analysis"
+output: html_document
+---
+
+## Introduction
+
+This analysis is for case study #2 from the **Google Data Analytics Certificate** (Bellabeat).
+
+It’s originally based on the case study "FitBit Fitness Tracker Data" by Möbius [found here](https://www.kaggle.com/arashnic/fitbit). 
+
+The purpose of this script is to clean and consolidate data to conduct an analysis that aims to *get insights* into how consumers are using their smart data. These insights will help **guide the marketing strategy** for the company.
+
+Questions to be answered:
+
+* What are some trends in smart device usage?
+* How could these trends apply to Bellabeat customers?
+* How could these trends help influence Bellabeat marketing strategy?
+
+#### Packages used for the cleaning, analysis and visualization
+
+* tidyverse for data import and wrangling
+* lubridate for date functions
+* ggplot for visualization
+* janitor for data cleaning
+* hms for time variables handling
+
+```{r load libraries, include=FALSE}
+library(tidyverse)  #helps wrangle data
+library(lubridate)  #helps wrangle date attributes
+library(ggplot2)  #helps visualize data
+library(janitor)
+library(hms)
+```
+
+### STEP 1: COLLECT DATA
+
+Load csv files into different data frames
+
+```{r upload data sets, echo=TRUE, message=FALSE, warning=FALSE, results='hide'}
+# Loop through csv files in directory and load to corresponding data frames
+for (data in list.files(path = "Data",pattern="*.csv")) {
+   name <- strsplit(data, "[_]")[[1]][1]
+   assign(name, read_csv(paste("data",data, sep = "/")))
+}
+# Remove temporary variables created in the loop
+rm(data)
+rm(name)
+```
+
+**Data overview**
+
+We will analyze the daily information corresponding to:
+
+* Daily Activity
+* Sleep
+* Weight
+
+```{r Data Overview}
+# Check sample of each data set
+head(dailyActivity)
+head(sleepDay)
+head(weightLogInfo)
+
+# Check number of users
+length(unique(dailyActivity$Id)) #33
+length(unique(sleepDay$Id)) #24
+length(unique(weightLogInfo$Id)) #8
+
+```
+
+**Limitation**: There is no sleep and weight information for all 33 users
+
+### STEP 2: WRANGLE DATA AND COMBINE INTO OTHER FILES
+
+#### 1. Daily Activity
+
+Let's start cleaning the Daily Activity dataset
+```{r daily activity data overview}
+# Data frame structure
+str(dailyActivity)
+
+# Data frame sample
+head(dailyActivity)
+```
+
+Cleaning steps:
+
+1.1 Activity Date is a string, convert to date
+```{r Activity Date to date format}
+
+dailyActivity$ActivityDate <- as.Date(dailyActivity$ActivityDate, format = "%m/%d/%Y")
+
+```
+
+1.2. Check if total distance and tracker distance are the same to remove one of them
+```{r distance vs tracker}
+
+sum(dailyActivity$TotalDistance == dailyActivity$TrackerDistance) #925
+sum(dailyActivity$TotalDistance != dailyActivity$TrackerDistance) #15
+nrow(dailyActivity)
+
+# Check those rows
+dailyActivity[dailyActivity$TotalDistance != dailyActivity$TrackerDistance, ]
+```
+Since there are just a few rows (15/940) where the values of Total Distance and Tracker distance are different, and there is not enough information about the meaning of them, we will remove the Tracker Distance and work only with Total Distance.
+```{r remove Tracker Distance}
+
+dailyActivity$TrackerDistance <- NULL
+
+```
+
+1.3. Check if Logged Activities Distance is relevant
+
+```{r check LoggedActivitiesDistance}
+
+table(dailyActivity$LoggedActivitiesDistance)
+
+```
+908/940 rows have a value of 0 for Logged Activities Distance
+
+It will not be considered for the analysis
+```{r remove Logged Activities Distance}
+
+dailyActivity$LoggedActivitiesDistance <- NULL
+
+```
+
+1.4. Identify and remove outliers in daily calories
+
+```{r daily calories outliers}
+
+summary(dailyActivity$Calories)
+
+boxplot(dailyActivity$Calories, horizontal = T)
+
+# Store outliers in variable
+cal_outliers <- boxplot(dailyActivity$Calories, horizontal = T)$out
+# How many rows to remove?
+nrow(dailyActivity[dailyActivity$Calories %in% cal_outliers, "Calories"]) # 16
+
+# Remove rows with outliers in calories
+dailyActivity <- dailyActivity[!dailyActivity$Calories %in% cal_outliers, ]
+
+rm(cal_outliers)
+
+```
+
+1.5. Look for missing values
+
+```{r daily activity NAs}
+
+sum(is.na(dailyActivity)) # No missing values
+
+```
+
+
+#### 2. Daily Sleep
+
+Now clean the Sleep dataset
+```{r sleep data overview}
+
+# Data frame structure
+str(sleepDay)
+
+# Data frame sample
+
+head(sleepDay)
+
+```
+
+Cleaning steps:
+
+2.1. Sleep Day is a string, convert to date and change the name
+```{r Sleep Date to date format}
+
+sleepDay$SleepDay <- as.Date(sleepDay$SleepDay, format = "%m/%d/%Y")
+sleepDay <- rename(sleepDay, Date = SleepDay)
+
+```
+
+2.2. Remove sleep records since it is not significant for the analysis
+```{r remove sleep records}
+
+sleepDay$TotalSleepRecords <- NULL
+
+```
+
+2.3. Look for missing values
+
+```{r sleep NAs}
+
+sum(is.na(sleepDay)) # No missing values
+
+```
+
+#### 3. Weight
+
+Lastly, clean the Weight dataset
+```{r weight data overview}
+
+# Data frame structure
+str(weightLogInfo)
+
+# Data frame sample
+
+head(weightLogInfo)
+
+```
+
+Cleaning steps:
+
+3.1. Date is a string, convert to date
+```{r Date column to date type}
+
+weightLogInfo$Date <- as.Date(weightLogInfo$Date, format = "%m/%d/%Y")
+
+```
+
+3.2. Remove not significant columns for the analysis
+```{r remove IsManual and LogId}
+
+weightLogInfo$IsManualReport <- NULL
+weightLogInfo$LogId <- NULL
+
+```
+
+3.3. Look for missing values
+
+```{r weight NAs}
+
+sum(is.na(weightLogInfo)) # 65 NAs
+
+#Check the columns where NAs exist
+sum(is.na(weightLogInfo$Id)) # 0
+sum(is.na(weightLogInfo$Date)) # 0
+sum(is.na(weightLogInfo$WeightKg)) # 0
+sum(is.na(weightLogInfo$WeightPounds)) # 0
+sum(is.na(weightLogInfo$Fat)) # 65
+sum(is.na(weightLogInfo$BMI)) # 0
+
+sum(is.na(weightLogInfo$Fat)) / nrow(weightLogInfo) # 97% of data is missing, remove variable
+
+weightLogInfo$Fat <- NULL
+
+```
+
+#### 3. Combine the datasets
+
+We will use the ID and the Date to join the three tables
+
+First, we need to validate that the join will be clean
+```{r join check}
+# Rename ActivityDate to Date
+dailyActivity <- rename(dailyActivity, Date = ActivityDate)
+
+nrow(dailyActivity) # 924
+
+dailyActivity %>%
+  left_join(sleepDay, by = c("Id", "Date")) %>%
+  left_join(weightLogInfo, by = c("Id", "Date")) %>%
+  tally() # 927
+
+# Check for duplicated registers
+
+sum(duplicated(dailyActivity)) # 0
+sum(duplicated(sleepDay)) # 3
+sum(duplicated(weightLogInfo)) # 0
+
+# Remove the duplicated registers
+sleepDay <- sleepDay[!duplicated(sleepDay), ]
+
+```
+
+Perform the join and save the result in a new variable
+
+```{r join datasets}
+
+dailyData <- dailyActivity %>%
+  left_join(sleepDay, by = c("Id", "Date")) %>%
+  left_join(weightLogInfo, by = c("Id", "Date"))
+
+```
+
+#### 4. Model the dataframe
+
+4.1. Enrich the data
+```{r enrich data}
+# Date enrichment
+dailyData <- dailyData %>%
+  mutate(Day = day(Date),
+         Weekday = wday(Date, label = TRUE, abbr = FALSE, week_start = 1),
+         Month = month(Date, label = TRUE),
+         Year = year(Date))
+
+# Validate Total Distance = SedentaryActiveDistance + LightActiveDistance + ModeratelyActiveDistance + VeryActiveDistance
+dailyData %>%
+  mutate(SumOfDistances = SedentaryActiveDistance + LightActiveDistance + ModeratelyActiveDistance + VeryActiveDistance) %>%
+  filter(TotalDistance != SumOfDistances) %>%
+  select(Id, Date, TotalDistance, SumOfDistances)
+# The differences are not significant (<0.01)
+
+# Add total minutes column
+dailyData <- dailyData %>%
+  mutate(TotalMinutes = SedentaryMinutes + LightlyActiveMinutes +
+           FairlyActiveMinutes + VeryActiveMinutes)
+```
+
+
+4.2. To facilitate the analysis of the data, let's create a long version of it
+```{r reshape long}
+dailyDataLong <- dailyData %>%
+  gather(ActivityTypeDistance, Distance,
+         c("SedentaryActiveDistance","LightActiveDistance",
+           "ModeratelyActiveDistance","VeryActiveDistance")) %>%
+  gather(ActivityTypeMin, Minutes,
+         c("SedentaryMinutes","LightlyActiveMinutes",
+           "FairlyActiveMinutes","VeryActiveMinutes")) %>%
+  arrange(Id, Date) %>%
+  mutate(ActivityTypeDistance = as.factor(ActivityTypeDistance),
+         ActivityTypeMin = as.factor(ActivityTypeMin))
+
+
+# Redefine levels for distance
+levels(dailyDataLong$ActivityTypeDistance) <- c("Lightly Active", "Moderately Active", "Sedentary Active", "Very Active")
+
+dailyDataLong$ActivityTypeDistance <- factor(dailyDataLong$ActivityTypeDistance,
+                                             levels = c("Sedentary Active", "Lightly Active",
+                                                        "Moderately Active", "Very Active"))
+
+# Redefine levels for minutes
+levels(dailyDataLong$ActivityTypeMin) <- c("Moderately Active", "Lightly Active", "Sedentary Active", "Very Active")
+
+dailyDataLong$ActivityTypeMin <- factor(dailyDataLong$ActivityTypeMin,
+                                             levels = c("Sedentary Active", "Lightly Active",
+                                                        "Moderately Active", "Very Active"))
+
+```
+
+4.3. Check Activity type for distance vs. for minutes
+
+Are ActivityTypeDistance and ActivityTypeMin the same?
+```{r clean long dataframe}
+dailyDataLong %>%
+  filter(ActivityTypeDistance != ActivityTypeMin) %>%
+  select(Id, Date, ActivityTypeDistance, ActivityTypeMin)
+
+```
+No, we can have a light activity regarding distance, but moderate for minutes
+
+More information needed to completely understand how these values are defined
+
+4.4. Calculate the percentage of missing values in each column
+```{r missing values}
+colMeans(is.na(dailyData))
+```
+Not enough data for Weight and BMI
+
+Almost half of the Sleep data is missing
+
+### STEP 3: CONDUCT DESCRIPTIVE ANALYSIS
+
+#### 1. Let's check the behavior of Total Distance and Total minutes throughout the week
+
+Total Distance
+```{r total distance viz}
+dailyData %>%
+  group_by(Weekday) %>%
+  summarise(TotalDistance = sum(TotalDistance)) %>%
+  ggplot(aes(x=Weekday, y=TotalDistance,
+             fill=factor(ifelse(Weekday %in% c("Tuesday", "Wednesday"),
+                                "Highlighted","Normal")))) +
+  geom_col() +
+  theme(axis.title.x = element_blank(),
+        legend.position = "none") +
+  ylab("Total Distance") +
+  labs(title = "Total distance per weekday",
+       subtitle = "Tuesday and Wednesday are the days people travel the longest distances") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+  
+```
+
+Total Minutes
+```{r total minutes viz}
+dailyData %>%
+  group_by(Weekday) %>%
+  summarise(TotalMinutes = sum(TotalMinutes)) %>%
+  ggplot(aes(x=Weekday, y=TotalMinutes,
+             fill=factor(ifelse(Weekday %in% c("Tuesday", "Wednesday"),
+                                "Highlighted","Normal")))) +
+  geom_col() +
+  theme(axis.title.x = element_blank(),
+        legend.position = "none") +
+  ylab("Total Minutes") +
+  labs(title = "Total Minutes per weekday",
+       subtitle = "Tuesday and Wednesday are the days people spend more time in activity") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+  
+```
+
+#### 2. Look for correlation between the variables
+
+```{r totals corr, message=FALSE, warning=FALSE}
+ggplot(data=dailyData, aes(x=TotalMinutesAsleep, y=Calories)) + geom_point()
+cor(dailyData[!is.na(dailyData$TotalMinutesAsleep),c("TotalMinutesAsleep", "Calories")]) #-0.0601
+
+# What variable is more related to calories burn?
+ggplot(data=dailyData, aes(x=TotalSteps, y=Calories)) + geom_point()
+cor(dailyData[,c("TotalSteps", "Calories")]) #0.5645
+
+ggplot(data=dailyData, aes(x=TotalDistance, y=Calories)) + geom_point()
+cor(dailyData[,c("TotalDistance", "Calories")]) #0.6262
+
+ggplot(data=dailyData, aes(x=TotalMinutes, y=Calories)) + geom_point()
+cor(dailyData[,c("TotalMinutes", "Calories")]) #0.7614
+
+```
+The minutes of activity are more correlated to calories burned
+
+Now let's see which type of activity is more correlated to calories burned
+```{r activity type corr}
+
+# What type of activity is more related to calories burn?
+# Distances
+cor(dailyData[,c("SedentaryActiveDistance",
+                 "LightActiveDistance",
+                 "ModeratelyActiveDistance",
+                 "VeryActiveDistance",
+                 "Calories")])
+#Minutes
+cor(dailyData[,c("SedentaryMinutes",
+                 "LightlyActiveMinutes",
+                 "FairlyActiveMinutes",
+                 "VeryActiveMinutes",
+                 "Calories")])
+
+```
+Very active minutes is the activity most closely correlated to calories burned
+
+#### 3. What type of activity is the most common among users?
+
+```{r activity type analysis, fig.width=9}
+
+dailyDataLong %>%
+  group_by(ActivityTypeMin) %>%
+  summarise(AvgHours = mean(Minutes)/60) %>%
+  ggplot(aes(x=ActivityTypeMin, y=AvgHours,
+             fill=factor(ifelse(ActivityTypeMin == "Lightly Active",
+                                "Highlighted","Normal")))) +
+  geom_col() +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none") +
+  labs(title = "Average hours spent on each activity",
+       subtitle = "Among the active options, light activity is the most common") +
+  scale_y_continuous(labels = scales::comma) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black")) +
+  coord_flip() +
+  ylab("Hours") +
+  geom_text(aes(label=round(AvgHours,1)), hjust=-0.1, size=3.5)
+
+```
+
+#### 4. What is the behaviour of the top performers compared to the average performers?
+
+In order to segment users, we will check the distribution of total calories burned by user
+```{r calories distribution}
+
+# Summarize the total calories by user
+
+UserCals <- dailyData %>%
+  group_by(Id) %>%
+  summarise(TotalCal = sum(Calories))
+
+# Visualize the histogram for calories
+hist(UserCals$TotalCal)
+
+# Identify quantile numbers
+quantile(UserCals$TotalCal)
+
+```
+
+Users with calories above the Upper Quartile (75%) will be defined as Top Performers
+
+Users with calories within the Interquartile Range will be defined as Average Performers
+
+Users with calories below the Lower Quartile (25%) will be defined as Low Performers
+
+
+
+Create a new data frame that contains the "type of user" variable
+```{r user type}
+
+# Identify the users
+
+UserCals <- UserCals %>%
+  mutate(UserType = case_when(TotalCal > quantile(UserCals$TotalCal)[4] ~ "Top Performer",
+                              TotalCal >= quantile(UserCals$TotalCal)[2] ~ "Avg Performer",
+                              TotalCal < quantile(UserCals$TotalCal)[2] ~ "Low Performer"),
+         UserType = factor(UserType, levels = c("Low Performer", "Avg Performer",
+                                                   "Top Performer")))
+
+# Get the user type variable from the previous dataset into Daily Datasets
+dailyData <- dailyData %>%
+  inner_join(UserCals, by="Id")
+
+dailyDataLong <- dailyDataLong %>%
+  inner_join(UserCals, by="Id")
+
+```
+
+Visualize the average time spent in activity (not sedentary) per weekday
+
+```{r time per weekday by user type, warning=FALSE}
+
+dailyData %>%
+  group_by(UserType, Weekday) %>%
+  summarise(AvgHours = mean((TotalMinutes - SedentaryMinutes)/60)) %>%
+  ggplot(aes(x=Weekday, y=AvgHours, fill=UserType)) +
+  geom_col(position = "dodge") +
+  theme(axis.title.x = element_blank()) +
+  labs(title = "Average time in activity throughout the week",
+       subtitle = "No major differences on weekdays, but during the weekend the top performers have a higher activity time") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black")) +
+  ylab("Hours (avg)") +
+  scale_fill_manual(values=c("#E3E1E2", "#C7C5C6", "#21ABCD")) +
+  geom_segment(aes(x = 8, y = 4, xend = 7.5, yend = 3.5),
+               arrow = arrow(length = unit(0.3, "cm"))) +
+  geom_segment(aes(x = 7, y = 4.5, xend = 6.5, yend = 4),
+               arrow = arrow(length = unit(0.3, "cm")))
+
+```
+
+There is not a significant different between the average time spend on the week
+
+Let's see what are the differences regarding the type of activity performed
+
+```{r activity distribution by user type, fig.width=9, fig.height=4.5}
+
+dailyDataLong %>%
+  mutate(PercActivity = Minutes / TotalMinutes) %>%
+  group_by(UserType, ActivityTypeMin) %>%
+  summarise(AvgPercAct = round(mean(PercActivity),2)) %>%
+  ggplot(aes(x=ActivityTypeMin, y=AvgPercAct, fill=UserType)) +
+  geom_col(position = "dodge") +
+  theme(axis.title.x = element_blank()) +
+  labs(title = "Average time in activity throughout the week",
+       subtitle = "No major differences among the different type of users") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black")) +
+  ylab("Time Percentage") +
+  scale_fill_manual(values=c("#E3E1E2", "#C7C5C6", "#21ABCD")) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_text(aes(label=scales::percent(AvgPercAct), x=ActivityTypeMin, y=AvgPercAct+0.03),
+            position = position_dodge(width = 0.9), size = 3)
+
+```
+
+As seen in the previous visualization, the main difference between top performers and the other users is the time spent on High-intensity activity, which seems to be the main component of calories consumption
+
+See below the average differences in time spent on high-intensity activity
+```{r time diff - activity by user type}
+
+dailyDataLong %>%
+  filter(ActivityTypeMin == "Very Active") %>%
+  group_by(UserType, Weekday) %>%
+  summarise(Hours = mean(Minutes/60)) %>%
+  ggplot(aes(x=Weekday, y=Hours, fill=UserType)) +
+  geom_col(position = "dodge") +
+  theme(axis.title.x = element_blank()) +
+  labs(title="Time spent (hours) on high-intensity activity ",
+       subtitle="Top performers spend about twice as much time on high-intensity activities") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black")) +
+  ylab("Time (h)") +
+  scale_fill_manual(values=c("#E3E1E2", "#C7C5C6", "#21ABCD"))
+
+```
+
+#### 5. What is the sleep behaviour among users?
+
+```{r sleep behavior, warning=FALSE}
+
+dailyData %>%
+  filter(!is.na(TotalMinutesAsleep)) %>%
+  group_by(Weekday, UserType) %>%
+  summarise(AvgSleepHrs = mean(TotalMinutesAsleep/60)) %>%
+  ggplot(aes(x=Weekday, y=AvgSleepHrs, fill=UserType)) +
+  geom_col(position = "dodge") +
+  theme(axis.title.x = element_blank()) +
+  labs(title="Sleep time (hours) by user type",
+       subtitle="There is no significant difference between users.\nIn general, users sleep around 7 hours and only top performers sleep more than 8 hours on Sunday.") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black")) +
+  ylab("Sleep Time (h)") +
+  scale_fill_manual(values=c("#E3E1E2", "#C7C5C6", "#21ABCD"))
+
+```
+
+
+### STEP 4: CONCLUSIONS
+
+**What are some trends in smart device usage?**
+
+* Tuesday and Wednesday are the days with more activity
+* High-intensity activity has the higher correlation to calories burned
+* Light-activity is the most common
+* Top performers (those with the highest calorie burn) are more active during the weekends than the rest of users
+* Top performers spend about twice as much time on very active exercise
+* Top performers spend around 40 minutes per day on very active exercise
+* Users sleep around 7 hours per day
+
+**How could these trends apply to Bellabeat customers?**
+
+* The app can be used to encourage Bellabeat customers to perform very active exercise if they are looking to burn more calories in less time
+* Goals can be set regarding "very active" time and sleep time
+
+**How could these trends help influence Bellabeat marketing strategy?**
+
+* By tracking users' data, we can help them define the most effective ways to burn calories and stay healthy.
+
+* With the information gathered, we can set goals that are related to a healthier life: at least 7 hours of sleep and a minimum of 30min of very active exercise
